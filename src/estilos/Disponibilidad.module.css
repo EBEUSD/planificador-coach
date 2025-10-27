@@ -1,0 +1,226 @@
+.wrap {
+  display: grid;
+  gap: 14px;
+}
+
+/* Head */
+.header {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 920px) {
+  .header {
+    grid-template-columns: 1.2fr 1fr;
+  }
+}
+.field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.label {
+  width: 120px;
+  opacity: 0.9;
+}
+.input {
+  width: 100%;
+  background: #17171a;
+  color: #e8e8e8;
+  border: 1px solid #2a2a2e;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* Días */
+.days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.dayChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #1b1b20;
+  border: 1px solid #2a2a2e;
+  cursor: pointer;
+  user-select: none;
+}
+.dayChip input {
+  accent-color: #ff6a00;
+}
+.dayOn {
+  background: #26262e;
+  border-color: #3a3a44;
+}
+
+/* Rápidas */
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sel {
+  background: #17171a;
+  color: #e8e8e8;
+  border: 1px solid #2a2a2e;
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-width: 120px;
+}
+.qbtn {
+  background: #1b1b20;
+  border: 1px solid #2a2a2e;
+  color: #e8e8e8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.qbtn:hover {
+  border-color: #3a3a44;
+}
+
+/* Lista de días */
+.dayList {
+  display: grid;
+  gap: 10px;
+}
+.dayCard {
+  background: #0e0e10;
+  border: 1px solid #1f1f24;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.dayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dayTitle {
+  font-weight: 700;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #1b1b20;
+  border: 1px solid #2a2a2e;
+  font-size: 0.9rem;
+}
+.chipBtn {
+  background: transparent;
+  border: none;
+  color: #ffb98a;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.addIcon {
+  background: #1b1b20;
+  border: 1px dashed #2a2a2e;
+  color: #e8e8e8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.addIcon:hover {
+  border-color: #3a3a44;
+}
+
+/* Editor inline */
+.editor {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.ok {
+  background: #ff6a00;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.cancel {
+  background: transparent;
+  border: none;
+  color: #ffb98a;
+  cursor: pointer;
+}
+
+/* FAB (botón flotante) */
+.actions {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  display: flex;
+  align-items: center; /* evita estiramiento vertical */
+  justify-content: flex-end;
+}
+.cta {
+  background: #ff6a00;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Sugerencias */
+.sugWrap {
+  display: grid;
+  gap: 10px;
+}
+.sugGroup {
+  background: #141416;
+  border: 1px solid #1f1f24;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.sugHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #202026;
+  font-size: 0.8rem;
+  border: 1px solid #2a2a2e;
+}
+.times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.time {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #1b1b20;
+  border: 1px solid #2a2a2e;
+  font-size: 0.9rem;
+}
