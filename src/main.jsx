@@ -2,51 +2,57 @@ import React, { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./estilos/globals.css";
-import { seedBloquesVitalicios } from "./servicios/seedBloques";
 import { db } from "./servicios/db.dexie";
+import {
+  ensureHorariosDefault,
+  resetAutoHorarios,
+} from "./servicios/seedHorarios";
 
 function Root() {
   useEffect(() => {
     (async () => {
       try {
-        const seedKey = "seed-bloques-v4";
-        if (!localStorage.getItem(seedKey)) {
-          await seedBloquesVitalicios();
-          localStorage.setItem(seedKey, "1");
-        }
+        if (typeof db.open === "function") await db.open();
 
-        const migKey = "migr-vitalicios-v4";
-        if (!localStorage.getItem(migKey)) {
-          // Marcar RS y PPW como vitalicios (por alias y por nombre como fallback)
-          await db.clientes
-            .where("alias")
-            .anyOf(["rs", "ppw"])
-            .modify((c) => {
-              c.vitalicio = true;
+        const need = [
+          { nombre: "RS", alias: "rs" },
+          { nombre: "PPW", alias: "ppw" },
+          { nombre: "Premier", alias: "premier" },
+        ];
+        const all = await db.clientes.toArray();
+        const norm = (s) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/^@+/, "")
+            .trim();
+        for (const n of need) {
+          const hit = all.find(
+            (c) =>
+              norm(c.alias) === n.alias || norm(c.nombre) === norm(n.nombre)
+          );
+          if (!hit) {
+            await db.clientes.add({
+              nombre: n.nombre,
+              alias: n.alias,
+              tz: "America/Argentina/Buenos_Aires",
+              disponibles: 0,
+              reservadas: 0,
+              usadas: 0,
+              vitalicio: true,
+              createdAt: Date.now(),
             });
-
-          await db.clientes
-            .where("nombre")
-            .anyOf(["RS", "ppw", "PPW"])
-            .modify((c) => {
-              c.vitalicio = true;
-            });
-
-          // Ajuste de bloques con horaFin "24:00" -> "23:59" para PPW
-          const rows = await db.bloques
-            .where({ etiqueta: "PPW (vitalicio)" })
-            .toArray();
-
-          for (const r of rows) {
-            if (r.horaFin === "24:00") {
-              await db.bloques.update(r.id, { horaFin: "23:59" });
-            }
           }
-
-          localStorage.setItem(migKey, "1");
         }
+
+        const FIX_KEY = "ba-only-auto-seed-v4";
+        if (!localStorage.getItem(FIX_KEY)) {
+          await resetAutoHorarios();
+          localStorage.setItem(FIX_KEY, "1");
+        }
+
+        await ensureHorariosDefault();
       } catch (err) {
-        console.error("Init error:", err);
+        console.error("Init falló:", err);
       }
     })();
   }, []);
@@ -54,8 +60,4 @@ function Root() {
   return <App />;
 }
 
-createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>
-);
+createRoot(document.getElementById("root")).render(<Root />);

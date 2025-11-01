@@ -37,24 +37,26 @@ export default function VistaCalendario() {
   const calWrapRef = useRef(null);
 
   useEffect(() => {
-    (async () => {
-      const cs = await listarClientes();
-      setClientes(cs);
-      await load();
-    })();
+    loadAll();
   }, []);
 
-  const load = async () => {
-    const ses = await listarSesiones();
-    const evSes = ses.map((x) => ({
-      id: x.id,
-      title:
-        clientes.find((c) => Number(c.id) === Number(x.clienteId))?.nombre ||
-        "Sesión",
-      start: new Date(x.inicioUtc),
-      end: new Date(x.finUtc),
-      meta: { ...x },
-    }));
+  const loadAll = async () => {
+    const [cs, ses] = await Promise.all([listarClientes(), listarSesiones()]);
+    setClientes(cs);
+    const byId = new Map(cs.map((c) => [Number(c.id), c]));
+    const evSes = ses.map((x) => {
+      const c = byId.get(Number(x.clienteId));
+      const title = (c?.alias || c?.nombre || "Sesión")
+        .toString()
+        .toUpperCase();
+      return {
+        id: x.id,
+        title,
+        start: new Date(x.inicioUtc),
+        end: new Date(x.finUtc),
+        meta: { ...x },
+      };
+    });
     setEvents(evSes);
   };
 
@@ -130,7 +132,7 @@ export default function VistaCalendario() {
     });
     setOpenAsignar(false);
     setSlotSel(null);
-    await load();
+    await loadAll();
   };
 
   const handleTomar = async () => {
@@ -138,7 +140,7 @@ export default function VistaCalendario() {
     await marcarTomada(eventoActivo.meta.id);
     setOpenAccion(false);
     setEventoActivo(null);
-    await load();
+    await loadAll();
   };
 
   const handleBorrar = async () => {
@@ -146,7 +148,7 @@ export default function VistaCalendario() {
     await eliminarSesion(eventoActivo.meta.id);
     setOpenAccion(false);
     setEventoActivo(null);
-    await load();
+    await loadAll();
   };
 
   const handleNota = async (nota) => {
@@ -154,7 +156,7 @@ export default function VistaCalendario() {
     await actualizarSesion(eventoActivo.meta.id, { nota });
     setOpenAccion(false);
     setEventoActivo(null);
-    await load();
+    await loadAll();
   };
 
   return (
