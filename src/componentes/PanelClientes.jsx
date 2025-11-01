@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import base from "../estilos/Formularios.module.css";
-import ux from "../estilos/Clientes.module.css";
+import ux from "../estilos/clientes.module.css";
 import {
   listarClientes,
   crearCliente,
