@@ -4,3 +4,13 @@
   border: 1px solid #222;
   border-radius: 14px;
 }
+
+/* Calendario.module.css */
+:global(.rbc-event) {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+:global(.rbc-event-content) {
+  pointer-events: auto;
+}

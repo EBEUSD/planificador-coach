@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import estilos from "../estilos/Calendario.module.css";
+import { useEffect, useRef, useState } from "react";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
-import { es } from "date-fns/locale";
+import es from "date-fns/locale/es";
 import "react-big-calendar/lib/css/react-big-calendar.css";
-import ModalSesion from "./ModalSesion";
+
 import { listarClientes } from "../servicios/clientes.dexie";
-import { listarSesionesCliente } from "../servicios/sesiones.dexie";
-import { expandirBloquesEnRango } from "../servicios/recurrencia.dexie";
-import { agregarExcepcion } from "../servicios/excepciones.dexie";
+import {
+  listarSesiones,
+  crearSesion,
+  eliminarSesion,
+  actualizarSesion,
+  marcarTomada,
+} from "../servicios/sesiones.dexie";
+
+import ModalAsignarSesion from "./ModalAsignarSesion";
+import ModalAccionEvento from "./ModalAccionEvento";
+import s from "../estilos/Calendario.module.css";
 
 const locales = { es };
 const localizer = dateFnsLocalizer({
@@ -21,101 +28,177 @@ const localizer = dateFnsLocalizer({
 
 export default function VistaCalendario() {
   const [clientes, setClientes] = useState([]);
-  const [eventos, setEventos] = useState([]);
-  const [abierto, setAbierto] = useState(false);
-  const [slot, setSlot] = useState(null);
-  const [rango, setRango] = useState({ ini: null, fin: null });
-
-  const cargar = useCallback(async (ini, fin) => {
-    const cs = await listarClientes();
-    setClientes(cs);
-    const evs = [];
-    for (const c of cs) {
-      const ss = await listarSesionesCliente(c.id);
-      ss.forEach((s) =>
-        evs.push({
-          id: s.id,
-          title: c.nombre,
-          start: new Date(s.inicioUtc),
-          end: new Date(s.finUtc),
-        })
-      );
-    }
-    const bloq = await expandirBloquesEnRango(ini, fin);
-    setEventos([...evs, ...bloq]);
-  }, []);
+  const [events, setEvents] = useState([]);
+  const [openAsignar, setOpenAsignar] = useState(false);
+  const [slotSel, setSlotSel] = useState(null);
+  const [opcionesAsignar, setOpcionesAsignar] = useState([]);
+  const [openAccion, setOpenAccion] = useState(false);
+  const [eventoActivo, setEventoActivo] = useState(null);
+  const calWrapRef = useRef(null);
 
   useEffect(() => {
-    const now = new Date();
-    const start = startOfWeek(now, { weekStartsOn: 1 });
-    const end = new Date(start);
-    end.setDate(end.getDate() + 41);
-    setRango({ ini: start, fin: end });
-    cargar(start, end);
-  }, [cargar]);
+    (async () => {
+      const cs = await listarClientes();
+      setClientes(cs);
+      await load();
+    })();
+  }, []);
 
-  const onCreada = (ev) => setEventos((prev) => [...prev, ev]);
+  const load = async () => {
+    const ses = await listarSesiones();
+    const evSes = ses.map((x) => ({
+      id: x.id,
+      title:
+        clientes.find((c) => Number(c.id) === Number(x.clienteId))?.nombre ||
+        "Sesión",
+      start: new Date(x.inicioUtc),
+      end: new Date(x.finUtc),
+      meta: { ...x },
+    }));
+    setEvents(evSes);
+  };
 
-  function onRangeChange(r) {
-    let ini, fin;
-    if (r.start && r.end) {
-      ini = r.start;
-      fin = r.end;
-    } else if (Array.isArray(r)) {
-      ini = r[0];
-      fin = r[r.length - 1];
-    } else {
-      const now = new Date();
-      ini = startOfWeek(now, { weekStartsOn: 1 });
-      fin = new Date(ini);
-      fin.setDate(fin.getDate() + 41);
+  const abrirAsignar = async (start, end) => {
+    setSlotSel({ start, end });
+    const opciones = clientes.map((c) => ({
+      id: c.id,
+      nombre: c.nombre,
+      alias: c.alias,
+      restantes: Number(c.disponibles || 0),
+      tieneVitalicio: Boolean(c.vitalicio),
+    }));
+    const filtradas = opciones.filter(
+      (o) => o.tieneVitalicio || o.restantes > 0
+    );
+    setOpcionesAsignar(
+      filtradas.sort((a, b) => {
+        const avA = a.tieneVitalicio ? Infinity : a.restantes;
+        const avB = b.tieneVitalicio ? Infinity : b.restantes;
+        return avB - avA;
+      })
+    );
+    setOpenAsignar(true);
+  };
+
+  const onSelectSlot = ({ start, end }) => {
+    const inicio = new Date(start);
+    const fin = new Date(inicio.getTime() + 60 * 60 * 1000);
+    abrirAsignar(inicio, fin);
+  };
+
+  const onSelectEvent = (ev) => {
+    setEventoActivo(ev);
+    setOpenAccion(true);
+  };
+
+  const eventPropGetter = (event) => {
+    const estado = event?.meta?.estado;
+    if (estado === "tomada") {
+      return {
+        style: {
+          backgroundColor: "#1b7f4d",
+          border: "1px solid #32a466",
+          color: "#fff",
+        },
+      };
     }
-    setRango({ ini, fin });
-    cargar(ini, fin);
-  }
-
-  async function onSelectEvent(ev) {
-    if (ev.meta && ev.meta.tipo === "bloque") {
-      const ok = confirm("¿Eliminar esta hora de este bloque para esta fecha?");
-      if (!ok) return;
-      await agregarExcepcion({
-        bloqueId: ev.meta.bloqueId,
-        fechaISO: ev.meta.fechaISO,
-        desdeMin: ev.meta.desdeMin,
-        hastaMin: ev.meta.hastaMin,
-      });
-      const bloq = await expandirBloquesEnRango(rango.ini, rango.fin);
-      const base = eventos.filter((x) => !(x.meta && x.meta.tipo === "bloque"));
-      setEventos([...base, ...bloq]);
+    if (estado === "cancelada") {
+      return {
+        style: {
+          backgroundColor: "#3a3a3a",
+          border: "1px solid #555",
+          color: "#ddd",
+        },
+      };
     }
-  }
+    return {
+      style: {
+        backgroundColor: "#1e72ff",
+        border: "1px solid #4e90ff",
+        color: "#fff",
+      },
+    };
+  };
+
+  const handleAsignarACliente = async (cliente) => {
+    if (!slotSel) return;
+    await crearSesion({
+      clienteId: cliente.id,
+      inicioUtc: slotSel.start,
+      finUtc: slotSel.end,
+      nota: "",
+    });
+    setOpenAsignar(false);
+    setSlotSel(null);
+    await load();
+  };
+
+  const handleTomar = async () => {
+    if (!eventoActivo) return;
+    await marcarTomada(eventoActivo.meta.id);
+    setOpenAccion(false);
+    setEventoActivo(null);
+    await load();
+  };
+
+  const handleBorrar = async () => {
+    if (!eventoActivo) return;
+    await eliminarSesion(eventoActivo.meta.id);
+    setOpenAccion(false);
+    setEventoActivo(null);
+    await load();
+  };
+
+  const handleNota = async (nota) => {
+    if (!eventoActivo) return;
+    await actualizarSesion(eventoActivo.meta.id, { nota });
+    setOpenAccion(false);
+    setEventoActivo(null);
+    await load();
+  };
 
   return (
-    <div className={estilos.wrapper}>
+    <div ref={calWrapRef} className={s.wrap}>
       <Calendar
-        culture="es"
         localizer={localizer}
-        events={eventos}
+        events={events}
+        startAccessor="start"
+        endAccessor="end"
         defaultView="week"
+        views={["month", "week", "day", "agenda"]}
         step={60}
         timeslots={1}
         selectable
-        onSelectSlot={(info) => {
-          setSlot(info);
-          setAbierto(true);
-        }}
-        onRangeChange={onRangeChange}
+        onSelectSlot={onSelectSlot}
         onSelectEvent={onSelectEvent}
-        style={{ height: "calc(100vh - 220px)" }}
+        eventPropGetter={eventPropGetter}
+        style={{ height: "calc(100vh - 120px)" }}
+        culture="es"
+        longPressThreshold={35}
       />
-      {abierto && (
-        <ModalSesion
-          slot={slot}
-          clientes={clientes}
-          onClose={() => setAbierto(false)}
-          onCreada={onCreada}
-        />
-      )}
+
+      <ModalAsignarSesion
+        open={openAsignar}
+        slot={slotSel}
+        opciones={opcionesAsignar}
+        onAsignar={handleAsignarACliente}
+        onClose={() => {
+          setOpenAsignar(false);
+          setSlotSel(null);
+        }}
+      />
+
+      <ModalAccionEvento
+        open={openAccion}
+        evento={eventoActivo}
+        onClose={() => {
+          setOpenAccion(false);
+          setEventoActivo(null);
+        }}
+        onTomar={handleTomar}
+        onBorrar={handleBorrar}
+        onNota={handleNota}
+      />
     </div>
   );
 }

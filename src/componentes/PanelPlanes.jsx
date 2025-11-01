@@ -1,211 +1,157 @@
-import { useEffect, useState, useMemo } from "react";
-import ui from "../estilos/Planes.module.css";
+import { useEffect, useState } from "react";
 import { listarClientes } from "../servicios/clientes.dexie";
-import { crearPlan, listarPlanesPorCliente } from "../servicios/planes.dexie";
-
-const PRESETS = [
-  { label: "Sesión suelta", sesiones: 1 },
-  { label: "Pack x2", sesiones: 2 },
-  { label: "Pack x4", sesiones: 4 },
-  { label: "Pack x8", sesiones: 8 },
-];
+import { crearPlan } from "../servicios/planes.dexie";
+import s from "../estilos/Formularios.module.css";
 
 export default function PanelPlanes() {
   const [clientes, setClientes] = useState([]);
   const [clienteId, setClienteId] = useState("");
-  const [form, setForm] = useState({
-    etiqueta: "Pack x4",
-    sesionesTotales: 4,
-    esVitalicio: false,
-  });
-  const [planes, setPlanes] = useState([]);
+  const [sesiones, setSesiones] = useState(4);
+  const [etiqueta, setEtiqueta] = useState("Pack x4");
+  const [vitalicio, setVitalicio] = useState(false);
 
-  useEffect(() => {
-    (async () => setClientes(await listarClientes()))();
-  }, []);
   useEffect(() => {
     (async () => {
-      if (clienteId) setPlanes(await listarPlanesPorCliente(clienteId));
-      else setPlanes([]);
+      const cs = await listarClientes();
+      setClientes(cs);
+      if (!clienteId && cs.length) setClienteId(String(cs[0].id));
     })();
-  }, [clienteId]);
+  }, []);
 
-  async function submit(e) {
-    e.preventDefault();
-    await crearPlan({ clienteId, ...form });
-    setForm({ etiqueta: "Pack x4", sesionesTotales: 4, esVitalicio: false });
-    setPlanes(await listarPlanesPorCliente(clienteId));
-  }
+  const setPreset = (n) => {
+    if (n === "vitalicio") {
+      setVitalicio(true);
+      setSesiones(0);
+      setEtiqueta("Vitalicio");
+      return;
+    }
+    setVitalicio(false);
+    const map = { 1: "Sesión", 2: "Pack x2", 4: "Pack x4", 8: "Pack x8" };
+    setSesiones(n);
+    setEtiqueta(map[n] || `Pack x${n}`);
+  };
 
-  const puedeCrear = useMemo(() => {
-    if (!clienteId) return false;
-    if (form.esVitalicio) return true;
-    return Number(form.sesionesTotales) > 0;
-  }, [clienteId, form]);
+  const guardar = async () => {
+    if (!clienteId) return;
+    await crearPlan(Number(clienteId), {
+      etiqueta,
+      sesiones: Number(sesiones || 0),
+      vitalicio,
+    });
+    setPreset(4);
+    alert("Plan creado");
+  };
 
   return (
-    <div className={ui.wrap}>
-      <div className={ui.card}>
-        <h3 className={ui.title}>Asignar plan</h3>
+    <div className={s.panel}>
+      <div className={s.card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0 }}>Asignar plan</h3>
+          <span className={s.badge}>Clientes: {clientes.length}</span>
+        </div>
 
-        <form onSubmit={submit} className={ui.grid}>
-          <div>
-            <div className={ui.row}>
-              <span className={ui.label}>Cliente</span>
-              <select
-                className={ui.select}
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value)}
-              >
-                <option value="">Elegir…</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <p className={s.muted}>
+          Crea un paquete de sesiones o marca al cliente como vitalicio.
+        </p>
 
-            <div className={ui.row}>
-              <span className={ui.label}>Etiqueta</span>
-              <input
-                className={ui.input}
-                value={form.etiqueta}
-                onChange={(e) => setForm({ ...form, etiqueta: e.target.value })}
-              />
-            </div>
-
-            <div className={ui.row}>
-              <span className={ui.label}>Sesiones</span>
-              <input
-                className={ui.input}
-                type="number"
-                min="0"
-                value={form.sesionesTotales}
-                onChange={(e) =>
-                  setForm({ ...form, sesionesTotales: Number(e.target.value) })
-                }
-                disabled={form.esVitalicio}
-              />
-            </div>
-
-            <div className={ui.row}>
-              <span className={ui.label}>Vitalicio</span>
-              <label className={ui.toggle}>
-                <input
-                  type="checkbox"
-                  checked={form.esVitalicio}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      esVitalicio: e.target.checked,
-                      sesionesTotales: e.target.checked
-                        ? 0
-                        : form.sesionesTotales || 4,
-                      etiqueta: e.target.checked
-                        ? "Vitalicio"
-                        : form.etiqueta === "Vitalicio"
-                        ? "Pack x4"
-                        : form.etiqueta,
-                    })
-                  }
-                />
-                {form.esVitalicio ? "Sí" : "No"}
-              </label>
-            </div>
-
-            <div className={ui.footer}>
-              <button disabled={!puedeCrear}>Crear plan</button>
-            </div>
-            <div className={ui.hint}>
-              Tip: usá los presets de la derecha para completar rápido.
-            </div>
-          </div>
-
-          <div>
-            <div className={ui.presetArea}>
-              {PRESETS.map((p) => (
-                <button
-                  type="button"
-                  key={p.label}
-                  className={ui.preset}
-                  onClick={() =>
-                    setForm({
-                      etiqueta: p.label,
-                      sesionesTotales: p.sesiones,
-                      esVitalicio: false,
-                    })
-                  }
-                >
-                  {p.label}
-                </button>
+        <div className={s.row2}>
+          <div className={s.field}>
+            <span className={s.label}>Cliente</span>
+            <select
+              className={s.input}
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+            >
+              <option value="">Elegir...</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
               ))}
-              <button
-                type="button"
-                className={ui.preset}
-                onClick={() =>
-                  setForm({
-                    etiqueta: "Vitalicio",
-                    sesionesTotales: 0,
-                    esVitalicio: true,
-                  })
-                }
-              >
-                Vitalicio
-              </button>
-            </div>
+            </select>
           </div>
-        </form>
-      </div>
-
-      {clienteId && (
-        <div className={ui.card}>
-          <h3 className={ui.title}>Planes del cliente</h3>
-          <div className={ui.list}>
-            {planes.map((p) => {
-              const total = p.esVitalicio
-                ? 1
-                : Math.max(1, p.sesionesTotales || 1);
-              const rest = p.esVitalicio
-                ? 1
-                : Math.max(0, p.sesionesRestantes || 0);
-              const pct = Math.round((rest / total) * 100);
-              return (
-                <div key={p.id} className={ui.item}>
-                  <div className={ui.itemHead}>
-                    <span className={ui.name}>{p.etiqueta}</span>
-                    <div className={ui.badges}>
-                      {p.esVitalicio ? (
-                        <span className={ui.badge}>Vitalicio</span>
-                      ) : (
-                        <span className={rest > 0 ? ui.badgeOk : ui.badgeZero}>
-                          {rest}/{p.sesionesTotales} disponibles
-                        </span>
-                      )}
-                      <span className={ui.badge}>{p.estado}</span>
-                    </div>
-                  </div>
-
-                  {!p.esVitalicio && (
-                    <div className={ui.progressWrap}>
-                      <div className={ui.progressBar}>
-                        <div
-                          className={ui.progressFill}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className={ui.badge}>{pct}%</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {planes.length === 0 && (
-              <span className={ui.badge}>Sin planes aún</span>
-            )}
+          <div className={s.field}>
+            <span className={s.label}>Sesiones</span>
+            <input
+              className={s.input}
+              type="number"
+              min="0"
+              value={sesiones}
+              onChange={(e) => setSesiones(e.target.value)}
+            />
           </div>
         </div>
-      )}
+
+        <div className={s.field}>
+          <span className={s.label}>Presets</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              className={sesiones === 1 && !vitalicio ? s.chipOn : s.chip}
+              onClick={() => setPreset(1)}
+            >
+              Sesión
+            </button>
+            <button
+              className={sesiones === 2 && !vitalicio ? s.chipOn : s.chip}
+              onClick={() => setPreset(2)}
+            >
+              x2
+            </button>
+            <button
+              className={sesiones === 4 && !vitalicio ? s.chipOn : s.chip}
+              onClick={() => setPreset(4)}
+            >
+              x4
+            </button>
+            <button
+              className={sesiones === 8 && !vitalicio ? s.chipOn : s.chip}
+              onClick={() => setPreset(8)}
+            >
+              x8
+            </button>
+            <button
+              className={vitalicio ? s.chipOn : s.chip}
+              onClick={() => setPreset("vitalicio")}
+            >
+              Vitalicio
+            </button>
+          </div>
+        </div>
+
+        <div className={s.field}>
+          <span className={s.label}>Etiqueta</span>
+          <input
+            className={s.input}
+            value={etiqueta}
+            onChange={(e) => setEtiqueta(e.target.value)}
+          />
+        </div>
+
+        <div
+          className={s.field}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <span className={s.label}>Vitalicio</span>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={vitalicio}
+              onChange={(e) => {
+                setVitalicio(e.target.checked);
+                if (e.target.checked) {
+                  setSesiones(0);
+                  if (!/vitalicio/i.test(etiqueta)) setEtiqueta("Vitalicio");
+                }
+              }}
+            />
+            {vitalicio ? "Sí" : "No"}
+          </label>
+        </div>
+
+        <button className={s.cta} onClick={guardar} disabled={!clienteId}>
+          Crear plan
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,91 +1,140 @@
 import { db } from "./db.dexie";
 
-export async function crearPlan({
+export async function asignarPlan(
   clienteId,
-  etiqueta,
-  sesionesTotales,
-  esVitalicio = false,
-}) {
-  const restantes =
-    esVitalicio || sesionesTotales == null ? null : Number(sesionesTotales);
-  return await db.planes.add({
-    clienteId: Number(clienteId),
-    etiqueta,
-    sesionesTotales: esVitalicio ? null : Number(sesionesTotales ?? 0),
-    sesionesRestantes: restantes,
-    esVitalicio,
-    estado: "activo",
-    creadoEn: new Date(),
+  { etiqueta, sesiones, vitalicio }
+) {
+  return db.transaction("rw", db.clientes, db.planes, async () => {
+    const idNum = Number(clienteId);
+    const cli = await db.clientes.get(idNum);
+    if (!cli) throw new Error("cliente inexistente");
+    const planId = await db.planes.add({
+      clienteId: idNum,
+      etiqueta,
+      sesiones: Number(sesiones || 0),
+      vitalicio: Boolean(vitalicio),
+      fecha: new Date().toISOString(),
+    });
+    if (!vitalicio && Number(sesiones) > 0) {
+      await db.clientes.update(idNum, {
+        disponibles: Number(cli.disponibles || 0) + Number(sesiones),
+      });
+    }
+    return planId;
   });
+}
+
+export async function crearPlan(clienteId, data) {
+  return asignarPlan(clienteId, data);
 }
 
 export async function listarPlanesPorCliente(clienteId) {
-  return await db.planes.where({ clienteId: Number(clienteId) }).toArray();
+  return db.planes
+    .where("clienteId")
+    .equals(Number(clienteId))
+    .reverse()
+    .sortBy("fecha");
 }
 
-export async function ajustarRestantes(planId, delta) {
-  const plan = await db.planes.get(Number(planId));
-  if (!plan || plan.esVitalicio) return;
-  const next = Math.max(0, (plan.sesionesRestantes ?? 0) + delta);
-  await db.planes.update(plan.id, { sesionesRestantes: next });
+function normalizarPlan(p) {
+  if (!p) return null;
+  return { ...p, esVitalicio: Boolean(p.vitalicio) };
 }
 
-export async function saldoCliente(clienteId) {
-  const planes = await db.planes
-    .where({ clienteId: Number(clienteId) })
-    .toArray();
-  const restantes = planes
-    .filter((p) => !p.esVitalicio && p.estado === "activo")
-    .reduce((acc, p) => acc + (p.sesionesRestantes ?? 0), 0);
-  const tieneVitalicio = planes.some(
-    (p) => p.esVitalicio && p.estado === "activo"
+export async function elegirPlanParaAsignar(clienteId) {
+  const planes = await listarPlanesPorCliente(clienteId);
+  const noVitalicio = planes.find(
+    (p) => !p.vitalicio && Number(p.sesiones) > 0
   );
-  return { restantes, tieneVitalicio };
+  if (noVitalicio) return normalizarPlan(noVitalicio);
+  const vitalicio = planes.find((p) => p.vitalicio);
+  return normalizarPlan(vitalicio) || null;
 }
 
-export async function recargarSesiones({ clienteId, cantidad, etiqueta }) {
-  const cant = Math.max(0, Number(cantidad || 0));
-  if (!cant) return null;
-  const planes = await db.planes
-    .where({ clienteId: Number(clienteId) })
-    .toArray();
-  const activos = planes.filter((p) => !p.esVitalicio && p.estado === "activo");
-  const target = activos.sort(
-    (a, b) => new Date(b.creadoEn) - new Date(a.creadoEn)
-  )[0];
-  if (target) {
-    const tot = (target.sesionesTotales ?? 0) + cant;
-    const rest = (target.sesionesRestantes ?? 0) + cant;
-    await db.planes.update(target.id, {
-      sesionesTotales: tot,
-      sesionesRestantes: rest,
+export async function ajustarReservadas(clienteId, delta) {
+  const idNum = Number(clienteId);
+  await db.clientes
+    .where("id")
+    .equals(idNum)
+    .modify((c) => {
+      const cur = typeof c.reservadas === "number" ? c.reservadas : 0;
+      c.reservadas = Math.max(0, cur + Number(delta));
     });
-    return target.id;
+}
+
+export async function ajustarDisponibles(clienteId, delta) {
+  const idNum = Number(clienteId);
+  await db.clientes
+    .where("id")
+    .equals(idNum)
+    .modify((c) => {
+      const cur = typeof c.disponibles === "number" ? c.disponibles : 0;
+      c.disponibles = Math.max(0, cur + Number(delta));
+    });
+}
+
+export async function reservarUnidad(clienteId) {
+  const idNum = Number(clienteId);
+  const cli = await db.clientes.get(idNum);
+  if (!cli) throw new Error("cliente inexistente");
+  if (cli.vitalicio) {
+    await ajustarReservadas(idNum, +1);
+    return;
   }
-  return await crearPlan({
-    clienteId,
-    etiqueta: etiqueta || `Recarga x${cant}`,
-    sesionesTotales: cant,
-    esVitalicio: false,
+  if (Number(cli.disponibles || 0) <= 0) throw new Error("sin disponibles");
+  await db.clientes.update(idNum, {
+    disponibles: Number(cli.disponibles) - 1,
+    reservadas: Number(cli.reservadas || 0) + 1,
   });
 }
 
-/** Devuelve el plan a consumir para una sesión:
- *  - Prioriza packs con saldo (>0), el más antiguo primero.
- *  - Si no hay packs con saldo y existe vitalicio: devuelve el vitalicio.
- *  - Si no hay nada: null.
- */
-export async function elegirPlanParaAsignar(clienteId) {
-  const planes = await listarPlanesPorCliente(clienteId);
-  const packs = planes
-    .filter(
-      (p) =>
-        !p.esVitalicio &&
-        p.estado === "activo" &&
-        (p.sesionesRestantes ?? 0) > 0
-    )
-    .sort((a, b) => new Date(a.creadoEn) - new Date(b.creadoEn)); // consumir el más viejo
-  if (packs.length) return packs[0];
-  const vit = planes.find((p) => p.esVitalicio && p.estado === "activo");
-  return vit || null;
+export async function revertirReserva(clienteId) {
+  const idNum = Number(clienteId);
+  const cli = await db.clientes.get(idNum);
+  if (!cli) return;
+  if (cli.vitalicio) {
+    await ajustarReservadas(idNum, -1);
+    return;
+  }
+  await db.clientes.update(idNum, {
+    disponibles: Number(cli.disponibles || 0) + 1,
+    reservadas: Math.max(0, Number(cli.reservadas || 0) - 1),
+  });
+}
+
+export async function moverReservaAUsada(clienteId, delta = 1) {
+  const idNum = Number(clienteId);
+  await db.clientes
+    .where("id")
+    .equals(idNum)
+    .modify((c) => {
+      const r = typeof c.reservadas === "number" ? c.reservadas : 0;
+      const u = typeof c.usadas === "number" ? c.usadas : 0;
+      const d = Number(delta);
+      c.reservadas = Math.max(0, r - d);
+      c.usadas = Math.max(0, u + d);
+    });
+}
+
+export async function revertirUsada(clienteId, delta = 1) {
+  const idNum = Number(clienteId);
+  const cli = await db.clientes.get(idNum);
+  if (!cli) return;
+  await db.clientes.update(idNum, {
+    usadas: Math.max(0, Number(cli.usadas || 0) - Number(delta)),
+    disponibles: Number(cli.disponibles || 0) + Number(delta),
+  });
+}
+
+export async function saldoCliente(clienteId) {
+  const cli = await db.clientes.get(Number(clienteId));
+  if (!cli) return { restantes: 0, tieneVitalicio: false };
+  return {
+    restantes: Number(cli.disponibles || 0),
+    tieneVitalicio: Boolean(cli.vitalicio),
+  };
+}
+
+export async function ajustarRestantes(clienteId, delta) {
+  return ajustarDisponibles(clienteId, delta);
 }

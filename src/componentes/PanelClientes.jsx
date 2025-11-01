@@ -1,193 +1,269 @@
-import { useEffect, useState, useMemo } from "react";
-import s from "../estilos/Formularios.module.css";
-import { crearCliente, listarClientes } from "../servicios/clientes.dexie";
-import { eliminarClienteCascada } from "../servicios/eliminarCascada";
-import { saldoCliente, recargarSesiones } from "../servicios/planes.dexie";
-import TimezoneSelect from "./TimezoneSelect";
+import { useEffect, useMemo, useState } from "react";
+import base from "../estilos/Formularios.module.css";
+import ux from "../estilos/Clientes.module.css";
+import {
+  listarClientes,
+  crearCliente,
+  borrarCliente,
+} from "../servicios/clientes.dexie";
+import TimezoneSelect from "../componentes/TimezoneSelect";
+
+function Badge({ children, tone = "default" }) {
+  const tones = {
+    default: "#2b2b2b",
+    blue: "#1e72ff",
+    red: "#7a1a1a",
+    green: "#1b7f4d",
+    orange: "#ff6a00",
+  };
+  const style = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    border: "1px solid rgba(255,255,255,.08)",
+    background: tones[tone] || tones.default,
+    color: tone === "default" ? "#ddd" : "#fff",
+  };
+  return <span style={style}>{children}</span>;
+}
+
+function HeaderChip({ active, onClick, children, count }) {
+  const style = {
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 14,
+    cursor: "pointer",
+    background: active ? "#ff6a00" : "#222",
+    color: active ? "#111" : "#ddd",
+    border: active ? "1px solid #ff8f44" : "1px solid #333",
+  };
+  return (
+    <button onClick={onClick} style={style}>
+      {children}{" "}
+      <span
+        style={{
+          marginLeft: 8,
+          padding: "2px 8px",
+          borderRadius: 999,
+          fontSize: 12,
+          background: active ? "#111" : "#333",
+          color: active ? "#ff6a00" : "#bbb",
+        }}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
 
 export default function PanelClientes() {
-  const [form, setForm] = useState({
-    nombre: "",
-    alias: "",
-    zonaHoraria: "America/Argentina/Buenos_Aires",
-    notas: "",
-  });
-  const [items, setItems] = useState([]);
-  const [filtro, setFiltro] = useState("all"); // all | con | sin | vit
+  const [clientes, setClientes] = useState([]);
+  const [filtro, setFiltro] = useState("todos");
 
-  const load = async () => {
-    const base = await listarClientes();
-    const withSaldo = await Promise.all(
-      base.map(async (c) => {
-        const sld = await saldoCliente(c.id);
-        return { ...c, saldo: sld.restantes, vitalicio: sld.tieneVitalicio };
-      })
-    );
-    withSaldo.sort((a, b) => b.saldo - a.saldo);
-    setItems(withSaldo);
-  };
+  const [openNuevo, setOpenNuevo] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [alias, setAlias] = useState("");
+  const [tz, setTz] = useState("America/Argentina/Buenos_Aires");
+  const puedeGuardar = nombre.trim().length > 0;
+
   useEffect(() => {
-    load();
+    cargar();
   }, []);
 
-  async function submit(e) {
-    e.preventDefault();
-    await crearCliente(form);
-    setForm({
-      nombre: "",
-      alias: "",
-      zonaHoraria: "America/Argentina/Buenos_Aires",
-      notas: "",
+  async function cargar() {
+    const list = await listarClientes();
+    setClientes(list);
+  }
+
+  async function handleCrear() {
+    if (!puedeGuardar) return;
+    await crearCliente({
+      nombre: nombre.trim(),
+      alias: alias.trim(),
+      tz,
+      disponibles: 0,
+      vitalicio: false,
     });
-    load();
+    setOpenNuevo(false);
+    setNombre("");
+    setAlias("");
+    setTz("America/Argentina/Buenos_Aires");
+    await cargar();
   }
 
-  async function borrar(id) {
-    const ok = confirm("¿Eliminar cliente y todo su contenido?");
-    if (!ok) return;
-    await eliminarClienteCascada(id);
-    load();
+  async function handleBorrar(id) {
+    await borrarCliente(id);
+    await cargar();
   }
 
-  async function recargar(id) {
-    const v = prompt("¿Cuántas sesiones querés agregar? (número)");
-    if (!v) return;
-    const n = Number(v);
-    if (Number.isNaN(n) || n <= 0) {
-      alert("Ingresá un número válido.");
-      return;
-    }
-    await recargarSesiones({ clienteId: id, cantidad: n });
-    load();
-  }
+  const counts = useMemo(() => {
+    const total = clientes.length;
+    const con = clientes.filter(
+      (c) => (Number(c.disponibles) || 0) > 0 || c.vitalicio
+    ).length;
+    const sin = clientes.filter(
+      (c) => !c.vitalicio && (Number(c.disponibles) || 0) === 0
+    ).length;
+    const vit = clientes.filter((c) => !!c.vitalicio).length;
+    return { total, con, sin, vit };
+  }, [clientes]);
 
-  // Reglas del filtro:
-  // - "con": solo packs con saldo > 0 (excluye vitalicios)
-  // - "sin": saldo == 0 y no vitalicio
-  // - "vit": vitalicios
-  const filtrados = useMemo(() => {
+  const listFiltrada = useMemo(() => {
     if (filtro === "con")
-      return items.filter((c) => !c.vitalicio && (c.saldo || 0) > 0);
+      return clientes.filter(
+        (c) => (Number(c.disponibles) || 0) > 0 || c.vitalicio
+      );
     if (filtro === "sin")
-      return items.filter((c) => !c.vitalicio && (c.saldo || 0) === 0);
-    if (filtro === "vit") return items.filter((c) => c.vitalicio);
-    return items;
-  }, [items, filtro]);
-
-  const countCon = items.filter(
-    (c) => !c.vitalicio && (c.saldo || 0) > 0
-  ).length;
-  const countSin = items.filter(
-    (c) => !c.vitalicio && (c.saldo || 0) === 0
-  ).length;
-  const countVit = items.filter((c) => c.vitalicio).length;
+      return clientes.filter(
+        (c) => !c.vitalicio && (Number(c.disponibles) || 0) === 0
+      );
+    if (filtro === "vit") return clientes.filter((c) => !!c.vitalicio);
+    return clientes;
+  }, [clientes, filtro]);
 
   return (
-    <div className={s.panel}>
-      <form className={`${s.card} ${s.full}`} onSubmit={submit}>
-        <h3>Nuevo cliente</h3>
-        <div className={s.row}>
-          <label style={{ width: 120 }}>Nombre</label>
-          <input
-            value={form.nombre}
-            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            required
-          />
+    <div className={base.panel}>
+      <div className={ux.header}>
+        <div className={ux.titleWrap}>
+          <h2 className={ux.title}>Clientes</h2>
+          <Badge>{`Total: ${counts.total}`}</Badge>
         </div>
-        <div className={s.row}>
-          <label style={{ width: 120 }}>Alias</label>
-          <input
-            value={form.alias}
-            onChange={(e) => setForm({ ...form, alias: e.target.value })}
-          />
-        </div>
-        <div className={s.row}>
-          <label style={{ width: 120 }}>Zona horaria</label>
-          <TimezoneSelect
-            value={form.zonaHoraria}
-            onChange={(v) => setForm({ ...form, zonaHoraria: v })}
-            id="tz-clientes"
-          />
-        </div>
-        <div className={s.row}>
-          <label style={{ width: 120 }}>Notas</label>
-          <textarea
-            value={form.notas}
-            onChange={(e) => setForm({ ...form, notas: e.target.value })}
-          />
-        </div>
-        <div className={s.row} style={{ justifyContent: "flex-end" }}>
-          <button type="submit">Guardar</button>
-        </div>
-      </form>
-
-      <div className={s.card}>
-        <div
-          className={s.row}
-          style={{ justifyContent: "space-between", alignItems: "center" }}
-        >
-          <h3>Clientes</h3>
-          <div className={s.seg}>
-            <button
-              className={`${s.segBtn} ${filtro === "all" ? s.segOn : ""}`}
-              onClick={() => setFiltro("all")}
-            >
-              Todos <span className={s.badge}>{items.length}</span>
-            </button>
-            <button
-              className={`${s.segBtn} ${filtro === "con" ? s.segOn : ""}`}
-              onClick={() => setFiltro("con")}
-            >
-              Con pendientes <span className={s.badgeOk}>{countCon}</span>
-            </button>
-            <button
-              className={`${s.segBtn} ${filtro === "sin" ? s.segOn : ""}`}
-              onClick={() => setFiltro("sin")}
-            >
-              Sin pendientes <span className={s.badgeZero}>{countSin}</span>
-            </button>
-            <button
-              className={`${s.segBtn} ${filtro === "vit" ? s.segOn : ""}`}
-              onClick={() => setFiltro("vit")}
-            >
-              Vitalicios <span className={s.badge}>{countVit}</span>
-            </button>
-          </div>
-        </div>
-
-        <div className={s.list}>
-          {filtrados.map((c) => (
-            <div
-              key={c.id}
-              className={s.row}
-              style={{ justifyContent: "space-between", width: "100%" }}
-            >
-              <div className={s.row} style={{ flexWrap: "wrap", gap: 6 }}>
-                <strong>{c.nombre}</strong>
-                {c.alias && <span className={s.badge}>@{c.alias}</span>}
-                {c.vitalicio && <span className={s.badgeOk}>Vitalicio</span>}
-                {!c.vitalicio && (
-                  <span className={c.saldo > 0 ? s.badgeOk : s.badgeZero}>
-                    {c.saldo} disponibles
-                  </span>
-                )}
-                <span className={s.badge}>{c.zonaHoraria}</span>
-              </div>
-              <div className={s.row} style={{ gap: 6 }}>
-                {!c.vitalicio && (
-                  <button onClick={() => recargar(c.id)}>Recargar</button>
-                )}
-                <button onClick={() => borrar(c.id)}>Borrar</button>
-              </div>
-            </div>
-          ))}
-          {filtrados.length === 0 && (
-            <div className={s.row}>
-              <span className={s.badge}>Sin resultados</span>
-            </div>
-          )}
+        <div className={ux.actions}>
+          <HeaderChip
+            active={filtro === "todos"}
+            onClick={() => setFiltro("todos")}
+            count={counts.total}
+          >
+            Todos
+          </HeaderChip>
+          <HeaderChip
+            active={filtro === "con"}
+            onClick={() => setFiltro("con")}
+            count={counts.con}
+          >
+            Con pendientes
+          </HeaderChip>
+          <HeaderChip
+            active={filtro === "sin"}
+            onClick={() => setFiltro("sin")}
+            count={counts.sin}
+          >
+            Sin pendientes
+          </HeaderChip>
+          <HeaderChip
+            active={filtro === "vit"}
+            onClick={() => setFiltro("vit")}
+            count={counts.vit}
+          >
+            Vitalicios
+          </HeaderChip>
+          <button className={ux.newBtn} onClick={() => setOpenNuevo(true)}>
+            Nuevo cliente
+          </button>
         </div>
       </div>
+
+      <div className={ux.list}>
+        {listFiltrada.map((c) => (
+          <div key={c.id} className={ux.card}>
+            <div className={ux.avatar}>
+              {String(c.nombre || "?")
+                .trim()
+                .charAt(0)
+                .toUpperCase()}
+            </div>
+            <div className={ux.info}>
+              <div className={ux.nameRow}>
+                <div className={ux.name}>{c.nombre}</div>
+                <button
+                  className={ux.dangerBtn}
+                  onClick={() => handleBorrar(c.id)}
+                >
+                  Borrar
+                </button>
+              </div>
+              <div className={ux.sub}>@{c.alias || "usuario"}</div>
+              <div className={ux.metaRow}>
+                <Badge>{c.tz || "America/Argentina/Buenos_Aires"}</Badge>
+                {c.vitalicio ? (
+                  <Badge tone="green">Vitalicio</Badge>
+                ) : (
+                  <Badge tone="blue">{`${Number(
+                    c.disponibles || 0
+                  )} disponibles`}</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {!listFiltrada.length && (
+          <div className={ux.empty}>
+            <div className={ux.emptyIcon}>👥</div>
+            <div className={ux.emptyTitle}>Sin resultados</div>
+            <div className={ux.emptySub}>
+              Cambiá el filtro o creá un cliente nuevo.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {openNuevo && (
+        <div className={ux.backdrop} onClick={() => setOpenNuevo(false)}>
+          <div className={ux.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={ux.modalHead}>
+              <h3>Nuevo cliente</h3>
+              <button className={ux.close} onClick={() => setOpenNuevo(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className={ux.formGrid}>
+              <label className={ux.label}>Nombre</label>
+              <input
+                className={ux.input}
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Nombre y apellido"
+              />
+
+              <label className={ux.label}>Alias</label>
+              <input
+                className={ux.input}
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                placeholder="@alias"
+              />
+
+              <label className={ux.label}>Zona horaria</label>
+              <TimezoneSelect
+                id="tz-nuevo-cliente"
+                value={tz}
+                onChange={(v) => setTz(v)}
+              />
+            </div>
+
+            <div className={ux.modalFoot}>
+              <button
+                className={ux.ghostBtn}
+                onClick={() => setOpenNuevo(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className={ux.primaryBtn}
+                disabled={!puedeGuardar}
+                onClick={handleCrear}
+              >
+                Crear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
