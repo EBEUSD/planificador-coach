@@ -8,6 +8,43 @@ import {
 } from "../servicios/clientes.dexie";
 import TimezoneSelect from "../componentes/TimezoneSelect";
 
+// ---------- utilidades búsqueda ----------
+const normalize = (s = "") =>
+  s
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+function useDebounced(value, delay = 200) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
+
+function Highlight({ text = "", query = "" }) {
+  if (!query) return <>{text}</>;
+  const raw = text ?? "";
+  const q = normalize(query);
+  const n = normalize(raw);
+  const i = n.indexOf(q);
+  if (i === -1) return <>{text}</>;
+  const before = raw.slice(0, i);
+  const match = raw.slice(i, i + q.length);
+  const after = raw.slice(i + q.length);
+  return (
+    <>
+      {before}
+      <mark className={ux.mark}>{match}</mark>
+      {after}
+    </>
+  );
+}
+// -----------------------------------------
+
 function Badge({ children, tone = "default" }) {
   const tones = {
     default: "#2b2b2b",
@@ -63,6 +100,19 @@ export default function PanelClientes() {
   const [clientes, setClientes] = useState([]);
   const [filtro, setFiltro] = useState("todos");
 
+  // ------ búsqueda ------
+  const [query, setQuery] = useState("");
+  const debounced = useDebounced(query, 200);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape" && query) setQuery("");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [query]);
+  // ----------------------
+
   const [openNuevo, setOpenNuevo] = useState(false);
   const [nombre, setNombre] = useState("");
   const [alias, setAlias] = useState("");
@@ -111,6 +161,7 @@ export default function PanelClientes() {
     return { total, con, sin, vit };
   }, [clientes]);
 
+  // 1) filtrado por chips
   const listFiltrada = useMemo(() => {
     if (filtro === "con")
       return clientes.filter(
@@ -124,6 +175,23 @@ export default function PanelClientes() {
     return clientes;
   }, [clientes, filtro]);
 
+  // 2) filtrado por búsqueda (sobre resultado del chip)
+  const listBuscada = useMemo(() => {
+    const q = normalize(debounced);
+    if (!q) return listFiltrada;
+    return listFiltrada.filter((c) => {
+      const fields = [
+        c.nombre,
+        c.alias ? `@${c.alias}` : "",
+        c.tz || "",
+        // si luego agregás email/tags, sumalos acá
+      ]
+        .map(normalize)
+        .some((v) => v.includes(q));
+      return fields;
+    });
+  }, [listFiltrada, debounced]);
+
   return (
     <div className={base.panel}>
       <div className={ux.header}>
@@ -131,6 +199,50 @@ export default function PanelClientes() {
           <h2 className={ux.title}>Clientes</h2>
           <Badge>{`Total: ${counts.total}`}</Badge>
         </div>
+
+        {/* --------- search bar --------- */}
+        <div className={ux.searchWrap} role="search">
+          <label htmlFor="buscar-clientes" className={ux.srOnly}>
+            Buscar clientes
+          </label>
+          <div className={ux.searchBox}>
+            <span className={ux.searchIcon} aria-hidden>
+              🔎
+            </span>
+            <input
+              id="buscar-clientes"
+              className={ux.searchInput}
+              type="text"
+              placeholder="Buscar por nombre, @alias o zona horaria…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoComplete="off"
+            />
+            {query && (
+              <button
+                type="button"
+                className={ux.clearBtn}
+                onClick={() => setQuery("")}
+                aria-label="Limpiar búsqueda"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <div className={ux.searchMeta}>
+            {query ? (
+              <>
+                <span>{listBuscada.length} resultado(s)</span>
+                <span className={ux.dotSep}>•</span>
+                <span className={ux.hint}>Esc para limpiar</span>
+              </>
+            ) : (
+              <span>Mostrando {listFiltrada.length}</span>
+            )}
+          </div>
+        </div>
+        {/* -------------------------------- */}
+
         <div className={ux.actions}>
           <HeaderChip
             active={filtro === "todos"}
@@ -167,7 +279,7 @@ export default function PanelClientes() {
       </div>
 
       <div className={ux.list}>
-        {listFiltrada.map((c) => (
+        {listBuscada.map((c) => (
           <div key={c.id} className={ux.card}>
             <div className={ux.avatar}>
               {String(c.nombre || "?")
@@ -177,7 +289,9 @@ export default function PanelClientes() {
             </div>
             <div className={ux.info}>
               <div className={ux.nameRow}>
-                <div className={ux.name}>{c.nombre}</div>
+                <div className={ux.name}>
+                  <Highlight text={c.nombre} query={debounced} />
+                </div>
                 <button
                   className={ux.dangerBtn}
                   onClick={() => handleBorrar(c.id)}
@@ -185,9 +299,19 @@ export default function PanelClientes() {
                   Borrar
                 </button>
               </div>
-              <div className={ux.sub}>@{c.alias || "usuario"}</div>
+              <div className={ux.sub}>
+                <Highlight
+                  text={`@${c.alias || "usuario"}`}
+                  query={debounced}
+                />
+              </div>
               <div className={ux.metaRow}>
-                <Badge>{c.tz || "America/Argentina/Buenos_Aires"}</Badge>
+                <Badge>
+                  <Highlight
+                    text={c.tz || "America/Argentina/Buenos_Aires"}
+                    query={debounced}
+                  />
+                </Badge>
                 {c.vitalicio ? (
                   <Badge tone="green">Vitalicio</Badge>
                 ) : (
@@ -200,12 +324,12 @@ export default function PanelClientes() {
           </div>
         ))}
 
-        {!listFiltrada.length && (
+        {!listBuscada.length && (
           <div className={ux.empty}>
             <div className={ux.emptyIcon}>👥</div>
             <div className={ux.emptyTitle}>Sin resultados</div>
             <div className={ux.emptySub}>
-              Cambiá el filtro o creá un cliente nuevo.
+              Probá otra búsqueda o cambiá el filtro.
             </div>
           </div>
         )}
