@@ -1,3 +1,4 @@
+// src/componentes/VistaCalendario.jsx
 import { useEffect, useRef, useState } from "react";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
@@ -82,7 +83,7 @@ export default function VistaCalendario() {
     setOpenAsignar(true);
   };
 
-  const onSelectSlot = ({ start, end }) => {
+  const onSelectSlot = ({ start }) => {
     const inicio = new Date(start);
     const fin = new Date(inicio.getTime() + 60 * 60 * 1000);
     abrirAsignar(inicio, fin);
@@ -122,12 +123,12 @@ export default function VistaCalendario() {
     };
   };
 
-  const handleAsignarACliente = async (cliente) => {
-    if (!slotSel) return;
+  const handleAsignarACliente = async (cliente, rango) => {
+    if (!(rango?.start && rango?.end)) return;
     await crearSesion({
       clienteId: cliente.id,
-      inicioUtc: slotSel.start,
-      finUtc: slotSel.end,
+      inicioUtc: rango.start,
+      finUtc: rango.end,
       nota: "",
     });
     setOpenAsignar(false);
