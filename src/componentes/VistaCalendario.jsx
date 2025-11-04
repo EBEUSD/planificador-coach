@@ -1,4 +1,3 @@
-// src/componentes/VistaCalendario.jsx
 import { useEffect, useRef, useState } from "react";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
@@ -45,20 +44,21 @@ export default function VistaCalendario() {
     const [cs, ses] = await Promise.all([listarClientes(), listarSesiones()]);
     setClientes(cs);
     const byId = new Map(cs.map((c) => [Number(c.id), c]));
-    const evSes = ses.map((x) => {
-      const c = byId.get(Number(x.clienteId));
-      const title = (c?.alias || c?.nombre || "Sesión")
-        .toString()
-        .toUpperCase();
-      return {
-        id: x.id,
-        title,
-        start: new Date(x.inicioUtc),
-        end: new Date(x.finUtc),
-        meta: { ...x },
-      };
-    });
-    setEvents(evSes);
+    setEvents(
+      ses.map((x) => {
+        const c = byId.get(Number(x.clienteId));
+        const title = (c?.alias || c?.nombre || "Sesión")
+          .toString()
+          .toUpperCase();
+        return {
+          id: x.id,
+          title,
+          start: new Date(x.inicioUtc),
+          end: new Date(x.finUtc),
+          meta: { ...x },
+        };
+      })
+    );
   };
 
   const abrirAsignar = async (start, end) => {
@@ -84,7 +84,16 @@ export default function VistaCalendario() {
   };
 
   const onSelectSlot = ({ start }) => {
-    const inicio = new Date(start);
+    const base = new Date(start);
+    const inicio = new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate(),
+      base.getHours(),
+      0,
+      0,
+      0
+    );
     const fin = new Date(inicio.getTime() + 60 * 60 * 1000);
     abrirAsignar(inicio, fin);
   };
@@ -96,7 +105,7 @@ export default function VistaCalendario() {
 
   const eventPropGetter = (event) => {
     const estado = event?.meta?.estado;
-    if (estado === "tomada") {
+    if (estado === "tomada")
       return {
         style: {
           backgroundColor: "#1b7f4d",
@@ -104,8 +113,7 @@ export default function VistaCalendario() {
           color: "#fff",
         },
       };
-    }
-    if (estado === "cancelada") {
+    if (estado === "cancelada")
       return {
         style: {
           backgroundColor: "#3a3a3a",
@@ -113,7 +121,6 @@ export default function VistaCalendario() {
           color: "#ddd",
         },
       };
-    }
     return {
       style: {
         backgroundColor: "#1e72ff",
@@ -143,7 +150,6 @@ export default function VistaCalendario() {
     setEventoActivo(null);
     await loadAll();
   };
-
   const handleBorrar = async () => {
     if (!eventoActivo) return;
     await eliminarSesion(eventoActivo.meta.id);
@@ -151,7 +157,6 @@ export default function VistaCalendario() {
     setEventoActivo(null);
     await loadAll();
   };
-
   const handleNota = async (nota) => {
     if (!eventoActivo) return;
     await actualizarSesion(eventoActivo.meta.id, { nota });
